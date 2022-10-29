@@ -95,7 +95,6 @@ class BedMesh:
         self.z_mesh = None
         self.toolhead = None
         self.horizontal_move_z = config.getfloat('horizontal_move_z', 5.)
-        self.mesh_tolerance = config.getfloat('mesh_tolerance', 5., minval=0.)
         self.fade_start = config.getfloat('fade_start', 1.)
         self.fade_end = config.getfloat('fade_end', 0.)
         self.fade_dist = self.fade_end - self.fade_start
@@ -295,6 +294,8 @@ class BedMeshCalibrate:
         self.zero_ref_pos = config.getfloatlist(
             "zero_reference_position", None, count=2
         )
+        self.mesh_tolerance = config.getfloat('mesh_tolerance', 5., minval=0.)
+        self.orig_config['mesh_tolerance'] = self.mesh_tolerance
         self.relative_reference_index = config.getint(
             'relative_reference_index', None, minval=0)
         config.deprecate('relative_reference_index')
@@ -580,11 +581,16 @@ class BedMeshCalibrate:
         self.origin = self.orig_config['origin']
         self.mesh_min = self.orig_config['mesh_min']
         self.mesh_max = self.orig_config['mesh_max']
+        self.mesh_tolerance = self.orig_config['mesh_tolerance']
         for key in list(self.mesh_config.keys()):
             self.mesh_config[key] = self.orig_config[key]
 
         params = gcmd.get_command_parameters()
         need_cfg_update = False
+
+        if "MESH_TOLERANCE" in params:
+            self.mesh_tolerance = gcmd.get_float("MESH_TOLERANCE")
+
         if self.radius is not None:
             if "MESH_RADIUS" in params:
                 self.radius = gcmd.get_float("MESH_RADIUS")
@@ -783,17 +789,17 @@ class BedMeshCalibrate:
 
         # ensure the mesh variance is within tolerance
         variance = z_mesh.calc_z_variance()
-        mesh_tolerance = self.bedmesh.mesh_tolerance
-        if variance > mesh_tolerance:
+        if variance > self.mesh_tolerance:
             raise self.gcode.error(
                 ("bed_mesh: mesh variance [%.3f] "
                     "is greater than allowed mesh_tolerance [%.3f]\n"
                     "level print bed or increase mesh_tolerance\n") %
-                (variance, mesh_tolerance))
+                (variance, self.mesh_tolerance))
 
         self.bedmesh.set_mesh(z_mesh)
         self.gcode.respond_info("Mesh Bed Leveling Complete")
         self.bedmesh.save_profile(self._profile_name)
+
     def _dump_points(self, probed_pts, corrected_pts, offsets):
         # logs generated points with offset applied, points received
         # from the finalize callback, and the list of corrected points
