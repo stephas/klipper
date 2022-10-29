@@ -95,6 +95,7 @@ class BedMesh:
         self.z_mesh = None
         self.toolhead = None
         self.horizontal_move_z = config.getfloat('horizontal_move_z', 5.)
+        self.mesh_tolerance = config.getfloat('mesh_tolerance', 5., minval=0.)
         self.fade_start = config.getfloat('fade_start', 1.)
         self.fade_end = config.getfloat('fade_end', 0.)
         self.fade_dist = self.fade_end - self.fade_start
@@ -779,6 +780,17 @@ class BedMeshCalibrate:
             # it is necessary to set the reference after the initial mesh
             # is generated to lookup the correct z value.
             z_mesh.set_zero_reference(*self.zero_ref_pos)
+
+        # ensure the mesh variance is within tolerance
+        variance = z_mesh.calc_z_variance()
+        mesh_tolerance = self.bedmesh.mesh_tolerance
+        if variance > mesh_tolerance:
+            raise self.gcode.error(
+                ("bed_mesh: mesh variance [%.3f] "
+                    "is greater than allowed mesh_tolerance [%.3f]\n"
+                    "level print bed or increase mesh_tolerance\n") %
+                (variance, mesh_tolerance))
+
         self.bedmesh.set_mesh(z_mesh)
         self.gcode.respond_info("Mesh Bed Leveling Complete")
         self.bedmesh.save_profile(self._profile_name)
@@ -937,6 +949,8 @@ class ZMesh:
             msg += "Mesh Average: %.2f\n" % (self.get_z_average())
             rng = self.get_z_range()
             msg += "Mesh Range: min=%.4f max=%.4f\n" % (rng[0], rng[1])
+            variance = self.calc_z_variance()
+            msg += "Mesh Variance: %.4f\n" % (variance)
             msg += "Interpolation Algorithm: %s\n" \
                    % (self.mesh_params['algo'])
             msg += "Measured points:\n"
@@ -997,6 +1011,11 @@ class ZMesh:
             return round(avg_z, 2)
         else:
             return 0.
+
+    def calc_z_variance(self):
+        min_z, max_z = self.get_z_range()
+        return max_z - min_z
+
     def _get_linear_index(self, coord, axis):
         if axis == 0:
             # X-axis
